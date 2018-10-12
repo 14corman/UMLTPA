@@ -54,13 +54,15 @@ class CustomFunctions:
 NUM_BROWSERS = 3
 
 sites = []
-#with open('top-1000.csv','rb') as f:
-#    for line in f:
-#        line = line.replace('\n','')
-#		site = line.split(',')[1]
-#        sites.append("http://"+site)
 
-sites.append("http://Reddit.com")
+# We want the first 500 websites.
+num_websites = 1
+with open('top-1m.csv','rb') as f:
+    for x in xrange(num_websites):
+        line = next(myfile)
+        line = line.replace('\n','')
+	     site = line.split(',')[1]
+        sites.append("http://"+site)
 
 # Loads the manager preference and 3 copies of the default browser dictionaries
 manager_params, browser_params = TaskManager.load_default_params(NUM_BROWSERS)
