@@ -19,19 +19,25 @@ from six.moves.urllib.parse import urljoin
 
 class ContainerSites:
     
-    def __init__(self, sites):
+    def __init__(self):
         #maxsize <= 0 means infinite size queue.
         #OpenWPM uses Python 2.7, so need Q instead of q.
-        self.queue = Queue.Queue(maxsize = -1)
-        
-        for site in sites:
-            self.queue.put(site)
+        self.queue = {}
             
         self.inside = True
         
+    def addSites(self, depth, sites):
+        self.queue[depth] = sites
+        
+    def addSite(self, depth, site):
+        if depth not in self.queue:
+          self.queue[depth] = []
+      
+        self.queue[depth].append(site)
+        
 
     
-def getParentContainer(container_class, url, sites, **kwargs):
+def getParentContainer(container_class, depth, url, **kwargs):
     """A custom function that detects if a tags on the page are 
     inside of an iframe or not."""
         
@@ -57,7 +63,7 @@ def getParentContainer(container_class, url, sites, **kwargs):
 #                    continue
                 
                 urls[href] = not is_top_frame
-                sites.append(href)
+                container_class.addSite(depth, href)
                 print("Adding ", href, " and it is ", not is_top_frame)
     
     #Default depth is 5 with (max_depth = 5)
@@ -69,13 +75,14 @@ def getParentContainer(container_class, url, sites, **kwargs):
     sock = clientsocket()
     sock.connect(*manager_params['aggregator_address'])
 
-    query = "CREATE TABLE IF NOT EXISTS parent_containers (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, url TEXT, iframe_container INTEGER);"
+    query = "CREATE TABLE IF NOT EXISTS parent_containers (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, url TEXT, iframe_container INTEGER, level INTEGER);"
     sock.send(("create_table", query))
 
     for url, container in urls:
         query = ('parent_containers', {
                 "url": url,
-                "iframe_container": container
+                "iframe_container": container,
+                "level": depth + 1
                 })
         sock.send(query)
         container_class.queue.put(url)
@@ -100,7 +107,8 @@ with open('top-1m.csv','rb') as f:
         site = line.split(',')[1]
         sites.append("http://" + site)
         
-container = ContainerSites(sites)
+container = ContainerSites()
+container.addSites(0, sites)
 
 # Loads the manager preference and 3 copies of the default browser dictionaries
 manager_params, browser_params = TaskManager.load_default_params(NUM_BROWSERS)
@@ -122,25 +130,27 @@ manager_params['log_directory'] = '~/Desktop/'
 time.sleep(10)
 manager_params['database_name'] = 'output_data.sqlite'
 
-# Instantiates the measurement platform
-# Commands time out by default after 60 seconds
-manager = TaskManager.TaskManager(manager_params, browser_params)
-
-# Visits the sites with all browsers simultaneously
-#This while loop is still breaking out too early. It will not process more
-#than 1 site at a time if 1 is in the queue.
-for site in sites:
-    command_sequence = CommandSequence.CommandSequence(site)
-
-    # Start by visiting the page
-    command_sequence.get(sleep=10, timeout=60)
-	
-    #command_sequence.recursive_dump_page_source()
+max_depth = 2
+for depth in range(max_depth):
+    # Instantiates the measurement platform
+    # Commands time out by default after 60 seconds
+    manager = TaskManager.TaskManager(manager_params, browser_params) 
     
-    command_sequence.run_custom_function(getParentContainer, (container, site, sites))
-
-    # index='**' synchronizes visits between the three browsers
-    manager.execute_command_sequence(command_sequence, index=None)
-
-# Shuts down the browsers and waits for the data to finish logging
-manager.close()
+    sites = container.queue[depth]
+      
+    # Visits the sites with all browsers simultaneously
+    for site in sites:
+        command_sequence = CommandSequence.CommandSequence(site)
+    
+        # Start by visiting the page
+        command_sequence.get(sleep=10, timeout=60)
+    	
+        #command_sequence.recursive_dump_page_source()
+        
+        command_sequence.run_custom_function(getParentContainer, (container, depth, site))
+    
+        # index='**' synchronizes visits between the three browsers
+        manager.execute_command_sequence(command_sequence, index=None)
+    
+    # Shuts down the browsers and waits for the data to finish logging
+    manager.close()
