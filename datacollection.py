@@ -46,7 +46,6 @@ def paramE(container_class, depth, visit_id, **kwargs):
     def collectLinks(driver, frame_stack, urls={}):
         is_top_frame = len(frame_stack) == 1
         for element in driver.find_elements_by_tag_name('a'):
-            #if element.is_displayed() is True:
             try:
                 href = element.get_attribute('href')
             except StaleElementReferenceException:
@@ -61,10 +60,54 @@ def paramE(container_class, depth, visit_id, **kwargs):
                 
             #Check if the url is part of the top domain, or is external.
             #If it is not external then add to next calls.
-            container_class.addSite(depth + 1, href)
+            #container_class.addSite(depth + 1, href)
             
             urls[href] = not is_top_frame
             #print("Adding ", href, " and it is ", not is_top_frame)
+            
+        for element in driver.find_elements_by_tag_name('script'):
+            try:
+                href = element.get_attribute('src')
+            except StaleElementReferenceException:
+                continue
+            
+            if href is None:
+                continue
+            
+            urls[href] = not is_top_frame
+            
+        for element in driver.find_elements_by_tag_name('img'):
+            try:
+                href = element.get_attribute('src')
+            except StaleElementReferenceException:
+                continue
+            
+            if href is None:
+                continue
+            
+            urls[href] = not is_top_frame
+            
+        for element in driver.find_elements_by_tag_name('iframe'):
+            try:
+                href = element.get_attribute('src')
+            except StaleElementReferenceException:
+                continue
+            
+            if href is None:
+                continue
+            
+            urls[href] = not is_top_frame
+            
+        for element in driver.find_elements_by_tag_name('style'):
+            try:
+                href = element.get_attribute('href')
+            except StaleElementReferenceException:
+                continue
+            
+            if href is None:
+                continue
+            
+            urls[href] = not is_top_frame
     
     #Default depth is 5 with (max_depth = 5)
     we.execute_in_all_frames(driver, collectLinks, {'urls': urls})
@@ -84,12 +127,23 @@ def paramE(container_class, depth, visit_id, **kwargs):
             tempUrl = row[0]
             if tempUrl in urls:
                 isNotIframe = urls[tempUrl]
-                database.cursor().execute("UPDATE http_requests SET depth = ? AND E = ? WHERE url = ?", (depth, int(isNotIframe), tempUrl))
+                database.cursor().execute("UPDATE http_requests SET depth = ? AND E = ? WHERE url = ?", (depth, isNotIframe, tempUrl))
                 database.commit()
-                print("UPDATE http_requests SET depth = %d AND E = %d WHERE url = %s" % (depth, int(isNotIframe), tempUrl))
+                print("UPDATE http_requests SET depth = %d AND E = %d WHERE url = %s" % (depth, isNotIframe, tempUrl))
             #else:
               #print("%s is not included" % tempUrl)
         
+
+def paramsAToD(visit_id, **kwargs):
+    db_path = kwargs["manager_params"]['database_name']
+    with sqlite3.connect(db_path, check_same_thread=False) as database:
+        cur = database.cursor()
+        cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visit_id,))
+        
+        rows = cur.fetchall()
+     
+        for row in rows:
+          print(row)
 
 
 # The list of sites that we wish to crawl
@@ -147,7 +201,11 @@ for depth in range(max_depth):
         # Start by visiting the page
         command_sequence.get(sleep=10, timeout=60)
         
+        #Collect parameter E
         command_sequence.run_custom_function(paramE, (container, depth, visit_counter))
+        
+        #Collect parameters A through D
+        command_sequence.run_custom_function(paramsAToD, (visit_counter,))
     
         # index='**' synchronizes visits between the three browsers
         manager.execute_command_sequence(command_sequence, index=None)
