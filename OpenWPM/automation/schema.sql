@@ -100,7 +100,21 @@ CREATE TABLE IF NOT EXISTS http_requests(
     req_call_stack TEXT,
     content_policy_type INTEGER NOT NULL,
     post_body TEXT,
-    time_stamp TEXT NOT NULL
+    time_stamp TEXT NOT NULL,
+	depth INTEGER,
+	main INTEGER,
+	A_one INTEGER,
+	A_two INTEGER,
+	B_one INTEGER,
+	B_two INTEGER,
+	C_one INTEGER,
+	C_two INTEGER,
+	D_one INTEGER,
+	D_two INTEGER,
+	E INTEGER,
+	F_iframe REAL,
+	F_script REAL,
+	F_resource REAL
 );
 
 CREATE TABLE IF NOT EXISTS http_responses(
