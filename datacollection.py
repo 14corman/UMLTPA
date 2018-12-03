@@ -154,7 +154,7 @@ for i in range(NUM_BROWSERS):
     # Enable flash for all three browsers
     browser_params[i]['disable_flash'] = False
     #browser_params[i]['headless'] = True
-    browser_params[i]['js_instrument'] = False
+    browser_params[i]['js_instrument'] = True
 
 # Update TaskManager configuration (use this for crawl-wide settings)
 manager_params['data_directory'] = '~/Desktop/'
