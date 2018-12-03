@@ -6,6 +6,7 @@ from OpenWPM.automation import CommandSequence, TaskManager
 from hashlib import md5
 import sys
 import time
+import re
 
 from selenium.common.exceptions import StaleElementReferenceException
 
@@ -16,6 +17,8 @@ from OpenWPM.automation.Commands.utils import webdriver_extensions as we
 from OpenWPM.automation.SocketInterface import clientsocket
 
 from six.moves.urllib.parse import urljoin
+
+regex = "\b((?:https?://)?(?:(?:www\.)?(?:[\da-z\.-]+)\.(?:[a-z]{2,6})|(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:(?:[0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:(?:(?::[0-9a-fA-F]{1,4}){1,6})|:(?:(?::[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(?::[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(?:ffff(?::0{1,4}){0,1}:){0,1}(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])|(?:[0-9a-fA-F]{1,4}:){1,4}:(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])))(?::[0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])?(?:/[\w\.-]*)*/?)\b"
 
 class ContainerSites:
     
@@ -32,7 +35,22 @@ class ContainerSites:
         self.depthUrl[depth].append(site)
         
 
+def helperE(driver, tag, attribute, is_top_frame):
+    urls = {}
+    for element in driver.find_elements_by_tag_name(tag):
+        try:
+            href = element.get_attribute(attribute)
+        except StaleElementReferenceException:
+            continue
+        
+        if href is None:
+            continue
+          
+        urls[href] = not is_top_frame
+        
+    return urls
     
+
 def paramE(container_class, depth, visit_id, **kwargs):
     """A custom function that detects if a tags on the page are 
     inside of an iframe or not."""
@@ -45,69 +63,32 @@ def paramE(container_class, depth, visit_id, **kwargs):
     
     def collectLinks(driver, frame_stack, urls={}):
         is_top_frame = len(frame_stack) == 1
-        for element in driver.find_elements_by_tag_name('a'):
-            try:
-                href = element.get_attribute('href')
-            except StaleElementReferenceException:
-                continue
+        
+        urls.update(helperE(driver, 'a', 'href', is_top_frame))
+        urls.update(helperE(driver, 'script', 'src', is_top_frame))
+        urls.update(helperE(driver, 'img', 'src', is_top_frame))
+        urls.update(helperE(driver, 'iframe', 'src', is_top_frame))
+        urls.update(helperE(driver, 'style', 'href', is_top_frame))
+        urls.update(helperE(driver, 'link', 'href', is_top_frame))
             
-            if href is None:
-                continue
-#                
-#                full_href = urljoin(url, href)
-#                if not full_href.startswith('http'):
-#                    continue
-                
-            #Check if the url is part of the top domain, or is external.
-            #If it is not external then add to next calls.
-            #container_class.addSite(depth + 1, href)
+#        for element in driver.find_elements_by_tag_name('script'):
+#            try:
+#                href = element.get_attribute('src')
+#            except StaleElementReferenceException:
+#                continue
+#            
+#            if href is None:
+#                continue
+#            
+#            urls[href] = not is_top_frame
             
-            urls[href] = not is_top_frame
-            #print("Adding ", href, " and it is ", not is_top_frame)
+#            text = element.text.strip()
+#            tempUrls = re.findall(regex, text)
+#            print("tempUrls in script: ", tempUrls)
+#            for parsedGroup in tempUrls:
+#                urlsParsed = parsedGroup.group("url")
+#                print("Inside script URLS: ", urlsParsed)
             
-        for element in driver.find_elements_by_tag_name('script'):
-            try:
-                href = element.get_attribute('src')
-            except StaleElementReferenceException:
-                continue
-            
-            if href is None:
-                continue
-            
-            urls[href] = not is_top_frame
-            
-        for element in driver.find_elements_by_tag_name('img'):
-            try:
-                href = element.get_attribute('src')
-            except StaleElementReferenceException:
-                continue
-            
-            if href is None:
-                continue
-            
-            urls[href] = not is_top_frame
-            
-        for element in driver.find_elements_by_tag_name('iframe'):
-            try:
-                href = element.get_attribute('src')
-            except StaleElementReferenceException:
-                continue
-            
-            if href is None:
-                continue
-            
-            urls[href] = not is_top_frame
-            
-        for element in driver.find_elements_by_tag_name('style'):
-            try:
-                href = element.get_attribute('href')
-            except StaleElementReferenceException:
-                continue
-            
-            if href is None:
-                continue
-            
-            urls[href] = not is_top_frame
     
     #Default depth is 5 with (max_depth = 5)
     we.execute_in_all_frames(driver, collectLinks, {'urls': urls})
@@ -127,9 +108,9 @@ def paramE(container_class, depth, visit_id, **kwargs):
             tempUrl = row[0]
             if tempUrl in urls:
                 isNotIframe = urls[tempUrl]
-                database.cursor().execute("UPDATE http_requests SET depth = ? AND E = ? WHERE url = ?", (depth, isNotIframe, tempUrl))
+                database.cursor().execute("UPDATE http_requests SET depth = ?, E = ? WHERE url = ?", (depth, isNotIframe, tempUrl))
                 database.commit()
-                print("UPDATE http_requests SET depth = %d AND E = %d WHERE url = %s" % (depth, isNotIframe, tempUrl))
+                #print("UPDATE http_requests SET depth = %d, E = %d WHERE url = %s" % (depth, isNotIframe, tempUrl))
             #else:
               #print("%s is not included" % tempUrl)
         
@@ -142,8 +123,8 @@ def paramsAToD(visit_id, **kwargs):
         
         rows = cur.fetchall()
      
-        for row in rows:
-          print(row)
+#        for row in rows:
+#          print(row)
 
 
 # The list of sites that we wish to crawl
