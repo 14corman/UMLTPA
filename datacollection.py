@@ -7,6 +7,10 @@ from hashlib import md5
 import sys
 import time
 import re
+import os
+
+#from urllib.parse import urlparse #Python 3
+from urlparse import urlparse  # Python 2
 
 from selenium.common.exceptions import StaleElementReferenceException
 
@@ -17,8 +21,6 @@ from OpenWPM.automation.Commands.utils import webdriver_extensions as we
 from OpenWPM.automation.SocketInterface import clientsocket
 
 from six.moves.urllib.parse import urljoin
-
-regex = "\b((?:https?://)?(?:(?:www\.)?(?:[\da-z\.-]+)\.(?:[a-z]{2,6})|(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|(?:(?:[0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,7}:|(?:[0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,5}(?::[0-9a-fA-F]{1,4}){1,2}|(?:[0-9a-fA-F]{1,4}:){1,4}(?::[0-9a-fA-F]{1,4}){1,3}|(?:[0-9a-fA-F]{1,4}:){1,3}(?::[0-9a-fA-F]{1,4}){1,4}|(?:[0-9a-fA-F]{1,4}:){1,2}(?::[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:(?:(?::[0-9a-fA-F]{1,4}){1,6})|:(?:(?::[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(?::[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(?:ffff(?::0{1,4}){0,1}:){0,1}(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])|(?:[0-9a-fA-F]{1,4}:){1,4}:(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])))(?::[0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])?(?:/[\w\.-]*)*/?)\b"
 
 class ContainerSites:
     
@@ -35,7 +37,7 @@ class ContainerSites:
         self.depthUrl[depth].append(site)
         
 
-def helperE(driver, tag, attribute, is_top_frame):
+def helperE(driver, tag, attribute, isTopFrame):
     urls = {}
     for element in driver.find_elements_by_tag_name(tag):
         try:
@@ -46,60 +48,37 @@ def helperE(driver, tag, attribute, is_top_frame):
         if href is None:
             continue
           
-        urls[href] = not is_top_frame
+        urls[href] = not isTopFrame
         
     return urls
     
 
-def paramE(container_class, depth, visit_id, **kwargs):
+def paramE(container_class, depth, visitId, **kwargs):
     """A custom function that detects if a tags on the page are 
     inside of an iframe or not."""
         
-    print("VISIT ID ", visit_id)
-    container_class.inside = True
     driver = kwargs['driver']
     
     urls = {}
     
-    def collectLinks(driver, frame_stack, urls={}):
-        is_top_frame = len(frame_stack) == 1
+    def collectLinks(driver, frameStack, urls={}):
+        isTopFrame = len(frameStack) == 1
         
-        urls.update(helperE(driver, 'a', 'href', is_top_frame))
-        urls.update(helperE(driver, 'script', 'src', is_top_frame))
-        urls.update(helperE(driver, 'img', 'src', is_top_frame))
-        urls.update(helperE(driver, 'iframe', 'src', is_top_frame))
-        urls.update(helperE(driver, 'style', 'href', is_top_frame))
-        urls.update(helperE(driver, 'link', 'href', is_top_frame))
-            
-#        for element in driver.find_elements_by_tag_name('script'):
-#            try:
-#                href = element.get_attribute('src')
-#            except StaleElementReferenceException:
-#                continue
-#            
-#            if href is None:
-#                continue
-#            
-#            urls[href] = not is_top_frame
-            
-#            text = element.text.strip()
-#            tempUrls = re.findall(regex, text)
-#            print("tempUrls in script: ", tempUrls)
-#            for parsedGroup in tempUrls:
-#                urlsParsed = parsedGroup.group("url")
-#                print("Inside script URLS: ", urlsParsed)
+        urls.update(helperE(driver, 'a', 'href', isTopFrame))
+        urls.update(helperE(driver, 'script', 'src', isTopFrame))
+        urls.update(helperE(driver, 'img', 'src', isTopFrame))
+        urls.update(helperE(driver, 'iframe', 'src', isTopFrame))
+        urls.update(helperE(driver, 'style', 'href', isTopFrame))
+        urls.update(helperE(driver, 'link', 'href', isTopFrame))
             
     
     #Default depth is 5 with (max_depth = 5)
     we.execute_in_all_frames(driver, collectLinks, {'urls': urls})
-		
-		
-    #print("URLS: ", urls)
     
     db_path = kwargs["manager_params"]['database_name']
     with sqlite3.connect(db_path, check_same_thread=False) as database:
         cur = database.cursor()
-        cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visit_id,))
+        cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visitId,))
         
         rows = cur.fetchall()
      
@@ -108,23 +87,83 @@ def paramE(container_class, depth, visit_id, **kwargs):
             tempUrl = row[0]
             if tempUrl in urls:
                 isNotIframe = urls[tempUrl]
-                database.cursor().execute("UPDATE http_requests SET depth = ?, E = ? WHERE url = ?", (depth, isNotIframe, tempUrl))
+                cur.execute("UPDATE http_requests SET depth = ?, E = ? WHERE url = ?", (depth, isNotIframe, tempUrl))
                 database.commit()
-                #print("UPDATE http_requests SET depth = %d, E = %d WHERE url = %s" % (depth, isNotIframe, tempUrl))
-            #else:
-              #print("%s is not included" % tempUrl)
         
 
-def paramsAToD(visit_id, **kwargs):
-    db_path = kwargs["manager_params"]['database_name']
-    with sqlite3.connect(db_path, check_same_thread=False) as database:
+def paramsAToD(visitId, dbPath):
+    with sqlite3.connect(dbPath, check_same_thread=False) as database:
         cur = database.cursor()
-        cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visit_id,))
+        cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visitId,))
+        
+        AOneCheck = ["ad.",       "ad/",        "ad&",        "ad=",        "ad;",        "ad-",        "ad_",
+                     "advert.",   "advert/",    "advert&",    "advert=",    "advert;",    "advert-",    "advert_",
+                     "popup.",    "popup/",     "popup&",     "popup=",     "popup;",     "popup-",     "popup_",
+                     "banner.",   "banner/",    "banner&",    "banner=",    "banner;",    "banner-",    "banner_",
+                     "sponsor.",  "sponsor/",   "sponsor&",   "sponsor=",   "sponsor;",   "sponsor-",   "sponsor_",
+                     "iframe.",   "iframe/",    "iframe&",    "iframe=",    "iframe;",    "iframe-",    "iframe_",
+                     "googlead.", "googlead/",  "googlead&",  "googlead=",  "googlead;",  "googlead-",  "googlead_",
+                     "adsys.",    "adsys/",     "adsys&",     "adsys=",     "adsys;",     "adsys-",     "adsys_",
+                     "adser.",    "adser/",     "adser&",     "adser=",     "adser;",     "adser-",     "adser_"]
+        
+        ATwoCheck = ["ad", "advert", "popup", "banner", "sponsor", "iframe", "googlead", "adsys", "adser"]
+        
+        BOneCheck = "[\w\-]+=[^;]+;*"
+        
+        BTwoCheck = "[\w\-]+=[^&]+&*"
+        
+        DOneCheck = "\d{2,4}x\d{2,4}"
+        
+        DTwoCheck = ["screenheight", "screenwidth", "browserheight", "browserwidth", "screendensity", "screenresolution", "browsertimeoffset"]
         
         rows = cur.fetchall()
      
-#        for row in rows:
-#          print(row)
+        for row in rows:
+          url = row[0]
+          
+          #Anything from AOneCheck exists in url
+          AOne = any(check in url for check in AOneCheck)
+          
+          #Anything from ATwoCheck exists in url
+          ATwo = any(check in url for check in ATwoCheck)
+          
+          #There are at least 2 occurences of ..;.. in the url (parameters being split by semicolon)
+          BOne = len(re.findall(BOneCheck, url)) >= 2
+          
+          #The parameters are being set up before the ?
+          urlSplit = url.split("?")
+          BTwo = len(re.findall(BTwoCheck, urlSplit[0])) >= 2
+              
+          #The base domain is anywhere in url path or query strings 
+          COne = False
+          
+          #The url is not a subdomain of the base url
+          CTwo = False
+          
+          cur.execute("SELECT top_level_url, is_third_party_channel FROM http_requests WHERE url = ? AND visit_id = ?", (url, visitId))
+          
+          possibleRows = cur.fetchall()
+          for CRow in possibleRows:
+              topUrl = CRow[0]
+              
+              if topUrl is not None:
+                urlTuple = urlparse(url)
+                parsedTopUrl = urlparse(topUrl).netloc.replace("http://", "").replace("https://", "").replace("www.", "")
+                COne = parsedTopUrl in urlTuple.path or \
+                       parsedTopUrl in urlTuple.query
+              
+              CTwo = CRow[1]
+          
+          #The URL contains 2-4 numbers followed by an "x" followed by 2-4 more numbers (EX: 950x2500)
+          DOne = len(re.findall(DOneCheck, url)) >= 1
+          
+          #Anything from DTwoCheck exists in url
+          DTwo = any(check in url for check in DTwoCheck)
+          
+          cur.execute("UPDATE http_requests SET A_one = ?, A_two = ?, B_one = ?, B_two = ?, C_one = ?, C_two = ?, \
+                      D_one = ?, D_two = ? WHERE url = ? AND visit_id = ?", (AOne, ATwo, BOne, BTwo, COne, CTwo, DOne, DTwo, url, visitId))
+          
+          database.commit()
 
 
 # The list of sites that we wish to crawl
@@ -145,31 +184,31 @@ container = ContainerSites()
 container.addSites(0, sites)
 
 # Loads the manager preference and 3 copies of the default browser dictionaries
-manager_params, browser_params = TaskManager.load_default_params(NUM_BROWSERS)
+managerParams, browserParams = TaskManager.load_default_params(NUM_BROWSERS)
 
 # Update browser configuration (use this for per-browser settings)
 for i in range(NUM_BROWSERS):
     # Record HTTP Requests and Responses
-    browser_params[i]['http_instrument'] = True
+    browserParams[i]['http_instrument'] = True
     # Enable flash for all three browsers
-    browser_params[i]['disable_flash'] = False
-    #browser_params[i]['headless'] = True
-    browser_params[i]['js_instrument'] = True
+    browserParams[i]['disable_flash'] = False
+    #browserParams[i]['headless'] = True
+    browserParams[i]['js_instrument'] = True
 
 # Update TaskManager configuration (use this for crawl-wide settings)
-manager_params['data_directory'] = '~/Desktop/'
-manager_params['log_directory'] = '~/Desktop/'
+managerParams['data_directory'] = '~/Desktop/'
+managerParams['log_directory'] = '~/Desktop/'
 
 # Have the program sleep for 10 milsec, and set the name of the database.
 time.sleep(10)
-manager_params['database_name'] = 'output_data.sqlite'
+managerParams['database_name'] = 'output_data.sqlite'
 
-max_depth = 1
-visit_counter = 1
-for depth in range(max_depth):
+maxDepth = 0
+visitCounter = 1
+for depth in range(maxDepth + 1):
     # Instantiates the measurement platform
     # Commands time out by default after 60 seconds
-    manager = TaskManager.TaskManager(manager_params, browser_params) 
+    manager = TaskManager.TaskManager(managerParams, browserParams) 
     
     database = manager.data_aggregator
     
@@ -183,14 +222,20 @@ for depth in range(max_depth):
         command_sequence.get(sleep=10, timeout=60)
         
         #Collect parameter E
-        command_sequence.run_custom_function(paramE, (container, depth, visit_counter))
+        command_sequence.run_custom_function(paramE, (container, depth, visitCounter))
         
         #Collect parameters A through D
-        command_sequence.run_custom_function(paramsAToD, (visit_counter,))
+        #command_sequence.run_custom_function(paramsAToD, (visitCounter,))
     
         # index='**' synchronizes visits between the three browsers
         manager.execute_command_sequence(command_sequence, index=None)
-        visit_counter += 1
+        visitCounter += 1
     
     # Shuts down the browsers and waits for the data to finish logging
     manager.close()
+
+
+#Perform any commands outside of manager crawls.
+db_path = os.path.join(os.path.expanduser('~/Desktop/'), managerParams['database_name'])
+for i in range(visitCounter):
+    paramsAToD(i, db_path)
