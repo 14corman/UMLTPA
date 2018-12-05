@@ -8,6 +8,8 @@ import sys
 import time
 import re
 import os
+from os.path import isfile, join
+from adblockparser import AdblockRules
 
 #from urllib.parse import urlparse #Python 3
 from urlparse import urlparse  # Python 2
@@ -53,7 +55,7 @@ def helperE(driver, tag, attribute, isTopFrame):
     return urls
     
 
-def paramE(container_class, depth, visitId, **kwargs):
+def paramE(depth, visitId, **kwargs):
     """A custom function that detects if a tags on the page are 
     inside of an iframe or not."""
         
@@ -164,24 +166,127 @@ def paramsAToD(visitId, dbPath):
                       D_one = ?, D_two = ? WHERE url = ? AND visit_id = ?", (AOne, ATwo, BOne, BTwo, COne, CTwo, DOne, DTwo, url, visitId))
           
           database.commit()
+          
+def paramF(visitId, dbPath):
+    with sqlite3.connect(dbPath, check_same_thread=False) as database:
+        num = (visitId,)
+        cur = database.cursor()
+    
+        # This part of the function calculates proportion of external iframes for each website ID and
+            # and stores it in a list 'prop_ext_iframe'.
+        
+        cur.execute('SELECT * FROM http_requests WHERE E = 1 AND visit_id = ?', num)
+        ext_iframe, total_iframe = 0,0
+        prop_ext_iframe = 0.0
+        for row in cur.fetchall():
+            total_iframe += 1
+            if row[13] == 1: # row[10] is binary column for external
+                ext_iframe += 1 
+        if total_iframe !=0 :
+            prop_ext_iframe = ext_iframe/float(total_iframe)
+    
+        # This part of the function calculates proportion of external scripts for each website ID and
+            # and stores it in a list 'prop_ext_script'.
+            
+        cur.execute('SELECT * FROM http_requests WHERE content_policy_type = 2 AND visit_id = ?', num)
+        ext_script, total_script = 0, 0
+        prop_ext_script = 0.0
+        for row in cur.fetchall():
+            total_script += 1
+            if row[13] == 1: # row[10] is binary column for external
+                ext_script += 1
+        if total_script !=0 :
+            prop_ext_script = ext_script/float(total_script)
+    
+        # This part of the function calculates proportion of URL's which are external resources for each website ID and
+            # and stores it in a list 'prop_ext_resources'.
+    
+        cur.execute('SELECT * FROM http_requests WHERE visit_id = ?', num)
+        ext_url_resources, total_url_resources = 0, 0
+        prop_ext_url_resources = 0.0
+        for row in cur.fetchall():
+            total_url_resources += 1
+            if row[13] == 1 : # row[10] is binary column for external
+                ext_url_resources += 1
+        if total_url_resources != 0:
+            prop_ext_url_resources = ext_url_resources/float(total_url_resources)
+            
+        cur.execute ('UPDATE http_requests SET F_iframe = (?) WHERE visit_id = ?', (prop_ext_iframe, visitId))
+        cur.execute ('UPDATE http_requests SET F_script = (?) WHERE visit_id = ?', (prop_ext_script, visitId))
+        cur.execute ('UPDATE http_requests SET F_resource = (?) WHERE visit_id = ?', (prop_ext_url_resources, visitId))
+        
+        database.commit()
+        
+def blockerCheck(visitId, dbPath, blocker, blockerNum):
+    with sqlite3.connect(dbPath, check_same_thread=False) as database:
+        cur = database.cursor()
+        cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visitId,))
+        rows = cur.fetchall()
+        
+        blockerString = "_month_list"
+        if blockerNum == 0:
+            blockerString = "current_list"
+        elif blockerNum == 1:
+            blockerString = "two" + blockerString
+        elif blockerNum == 2:
+            blockerString = "four" + blockerString
+        elif blockerNum == 3:
+            blockerString = "six" + blockerString
+     
+        for row in rows:
+            url = row[0]    
+            result = blocker.should_block(url)
+            cur.execute("UPDATE http_requests SET " + blockerString + " = ? WHERE url = ? AND visit_id = ?", (result, url, visitId))
+            
+        database.commit()
+          
+        
+def getAdBlock(directory):
+    files = [join(directory, f) for f in os.listdir(directory) if isfile(join(directory, f))]
+    
+    content = []
+    for file in files:
+        with open(file) as f:
+            for line in f:
+                content.append(line.strip())
+                
+    return content
+  
+def getNextDepthHelper(url, depth, cur):
+    cur.execute("INSERT INTO url_depth (depth, url) VALUES (?, ?)", (depth + 0, url))
+  
+def getNextDepth(url, depth, **kwargs):
+    driver = kwargs['driver']
+    domain = urlparse(url).netloc.replace("http://", "").replace("https://", "").replace("www.", "")
+    
+    db_path = kwargs["manager_params"]['database_name']
+    with sqlite3.connect(db_path, check_same_thread=False) as database:
+        cur = database.cursor()
+        for element in driver.find_elements_by_tag_name("a"):
+            try:
+                href = element.get_attribute("href")
+            except StaleElementReferenceException:
+                continue
+            
+            if href is None:
+                continue
+              
+            if domain in href:
+                #print("Next url in depth: ", href)
+                getNextDepthHelper(href, depth + 1, cur)
+                
+        database.commit()
+          
 
 
 # The list of sites that we wish to crawl
 NUM_BROWSERS = 3
 
-sites = []
-
-# We want the first 500 websites.
-num_websites = 3
-with open('top-1m.csv','rb') as f:
-    for x in xrange(num_websites):
-        line = next(f)
-        line = line.replace('\r\n','')
-        site = line.split(',')[1]
-        sites.append("http://" + site)
-        
+#Will hold all websites and their respective depth
 container = ContainerSites()
-container.addSites(0, sites)
+
+easyListDirs = ["easylist-Dec 4", "easylist-Oct 4", "easylist-Aug 4", "easylist-Jun 4"]
+blockers = []        
 
 # Loads the manager preference and 3 copies of the default browser dictionaries
 managerParams, browserParams = TaskManager.load_default_params(NUM_BROWSERS)
@@ -194,6 +299,9 @@ for i in range(NUM_BROWSERS):
     browserParams[i]['disable_flash'] = False
     #browserParams[i]['headless'] = True
     browserParams[i]['js_instrument'] = True
+    browserParams[i]['ublock-origin'] = False
+    browserParams[i]['ghostery'] = False
+    
 
 # Update TaskManager configuration (use this for crawl-wide settings)
 managerParams['data_directory'] = '~/Desktop/'
@@ -203,16 +311,37 @@ managerParams['log_directory'] = '~/Desktop/'
 time.sleep(10)
 managerParams['database_name'] = 'output_data.sqlite'
 
-maxDepth = 0
+db_path = os.path.join(os.path.expanduser('~/Desktop/'), managerParams['database_name'])
+
+# We want the first 500 websites.
+num_websites = 500
+
+maxDepth = 2
 visitCounter = 1
 for depth in range(maxDepth + 1):
+  
     # Instantiates the measurement platform
     # Commands time out by default after 60 seconds
     manager = TaskManager.TaskManager(managerParams, browserParams) 
     
-    database = manager.data_aggregator
+    #sites = container.depthUrl[depth]
     
-    sites = container.depthUrl[depth]
+    sites = []
+    
+    if depth == 0:
+        with open('top-1m.csv','rb') as f:
+          for x in xrange(num_websites):
+              line = next(f)
+              line = line.replace('\r\n','')
+              site = line.split(',')[1]
+              sites.append("http://" + site)
+    else:
+        with sqlite3.connect(db_path, check_same_thread=False) as database:
+            cur = database.cursor()
+            cur.execute("SELECT url FROM url_depth WHERE depth = ?", (depth,))
+            rows = cur.fetchall()
+            for row in rows:
+                sites.append(row[0])
       
     # Visits the sites with all browsers simultaneously
     for site in sites:
@@ -222,20 +351,34 @@ for depth in range(maxDepth + 1):
         command_sequence.get(sleep=10, timeout=60)
         
         #Collect parameter E
-        command_sequence.run_custom_function(paramE, (container, depth, visitCounter))
+        command_sequence.run_custom_function(paramE, (depth, visitCounter))
+        
+        #Get URLs for next depth
+        command_sequence.run_custom_function(getNextDepth, (site, depth))
         
         #Collect parameters A through D
         #command_sequence.run_custom_function(paramsAToD, (visitCounter,))
     
         # index='**' synchronizes visits between the three browsers
         manager.execute_command_sequence(command_sequence, index=None)
+        
         visitCounter += 1
     
     # Shuts down the browsers and waits for the data to finish logging
     manager.close()
+    
+print("Manager done......")
+for easyListDir in easyListDirs:
+    blockers.append(AdblockRules(getAdBlock(easyListDir)))
+    print("blocker %s created" % (easyListDir,))
 
 
 #Perform any commands outside of manager crawls.
-db_path = os.path.join(os.path.expanduser('~/Desktop/'), managerParams['database_name'])
 for i in range(visitCounter):
     paramsAToD(i, db_path)
+    paramF(i, db_path)
+    
+    for (index, blocker) in enumerate(blockers):
+        blockerCheck(i, db_path, blocker, index)
+        
+    print("id %d parsed" % (i,))

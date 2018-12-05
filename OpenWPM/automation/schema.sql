@@ -79,6 +79,12 @@ CREATE TABLE IF NOT EXISTS crawl_history (
     dtg DATETIME DEFAULT (CURRENT_TIMESTAMP),
     FOREIGN KEY(crawl_id) REFERENCES crawl(id));
 
+CREATE TABLE IF NOT EXISTS url_depth(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    depth INTEGER NOT NULL,
+	url TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS http_requests(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     crawl_id INTEGER NOT NULL,
@@ -114,7 +120,13 @@ CREATE TABLE IF NOT EXISTS http_requests(
 	E BOOLEAN,
 	F_iframe REAL,
 	F_script REAL,
-	F_resource REAL
+	F_resource REAL,
+	current_list BOOLEAN,
+	two_month_list BOOLEAN,
+	four_month_list BOOLEAN,
+	six_month_list BOOLEAN,
+	knn_pred BOOLEAN,
+	nn_pred BOOLEAN
 );
 
 CREATE TABLE IF NOT EXISTS http_responses(
