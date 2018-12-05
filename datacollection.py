@@ -3,8 +3,7 @@ from __future__ import absolute_import
 from six.moves import range
 
 from OpenWPM.automation import CommandSequence, TaskManager
-from hashlib import md5
-import sys
+from OpenWPM.automation.SocketInterface import clientsocket
 import time
 import re
 import os
@@ -16,13 +15,8 @@ from urlparse import urlparse  # Python 2
 
 from selenium.common.exceptions import StaleElementReferenceException
 
-from OpenWPM.automation.utilities import db_utils
 import sqlite3
-from OpenWPM.automation.utilities import domain_utils as du
 from OpenWPM.automation.Commands.utils import webdriver_extensions as we
-from OpenWPM.automation.SocketInterface import clientsocket
-
-from six.moves.urllib.parse import urljoin
 
 class ContainerSites:
     
@@ -256,26 +250,37 @@ def getNextDepthHelper(url, depth, cur):
     cur.execute("INSERT INTO url_depth (depth, url) VALUES (?, ?)", (depth + 0, url))
   
 def getNextDepth(url, depth, **kwargs):
+    print(kwargs)
     driver = kwargs['driver']
     domain = urlparse(url).netloc.replace("http://", "").replace("https://", "").replace("www.", "")
     
-    db_path = kwargs["manager_params"]['database_name']
-    with sqlite3.connect(db_path, check_same_thread=False) as database:
-        cur = database.cursor()
-        for element in driver.find_elements_by_tag_name("a"):
-            try:
-                href = element.get_attribute("href")
-            except StaleElementReferenceException:
-                continue
-            
-            if href is None:
-                continue
-              
-            if domain in href:
-                #print("Next url in depth: ", href)
-                getNextDepthHelper(href, depth + 1, cur)
+    sock = kwargs["extension_socket"]
+#    sock = clientsocket()
+#    sock.connect(kwargs["manager_params"]['aggregator_address'])
+    
+#    db_path = kwargs["manager_params"]['database_name']
+#    with sqlite3.connect(db_path, check_same_thread=False) as database:
+#        cur = database.cursor()
+    for element in driver.find_elements_by_tag_name("a"):
+        try:
+            href = element.get_attribute("href")
+        except StaleElementReferenceException:
+            continue
+        
+        if href is None:
+            continue
+          
+        if domain in href:
+          insert = {}
+          insert["depth"] = depth + 1
+          insert["url"] = href
+          sock.send(("url_depth", insert))
+            #print("Next url in depth: ", href)
+#            getNextDepthHelper(href, depth + 1, cur)
                 
-        database.commit()
+#        database.commit()
+            
+#    sock.close()
           
 
 
@@ -314,18 +319,11 @@ managerParams['database_name'] = 'output_data.sqlite'
 db_path = os.path.join(os.path.expanduser('~/Desktop/'), managerParams['database_name'])
 
 # We want the first 500 websites.
-num_websites = 500
-
+num_websites = 2
 maxDepth = 2
 visitCounter = 1
 for depth in range(maxDepth + 1):
   
-    # Instantiates the measurement platform
-    # Commands time out by default after 60 seconds
-    manager = TaskManager.TaskManager(managerParams, browserParams) 
-    
-    #sites = container.depthUrl[depth]
-    
     sites = []
     
     if depth == 0:
@@ -342,6 +340,10 @@ for depth in range(maxDepth + 1):
             rows = cur.fetchall()
             for row in rows:
                 sites.append(row[0])
+  
+    # Instantiates the measurement platform
+    # Commands time out by default after 60 seconds
+    manager = TaskManager.TaskManager(managerParams, browserParams) 
       
     # Visits the sites with all browsers simultaneously
     for site in sites:
@@ -355,9 +357,6 @@ for depth in range(maxDepth + 1):
         
         #Get URLs for next depth
         command_sequence.run_custom_function(getNextDepth, (site, depth))
-        
-        #Collect parameters A through D
-        #command_sequence.run_custom_function(paramsAToD, (visitCounter,))
     
         # index='**' synchronizes visits between the three browsers
         manager.execute_command_sequence(command_sequence, index=None)
