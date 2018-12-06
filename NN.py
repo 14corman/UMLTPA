@@ -7,41 +7,41 @@ import re
 import sqlite3
 
 # Hyper parameters
-epochs = 10
+epochs = 100
 batch_size = 5
-keep_probability = .0001
+keep_probability = .8
 learning_rate = 0.001
 
 #file parameters
 dataset_name = "two"
 checkpoint_dir = "checkpoint"
-database_path = "output_data_detected_ads.sqlite"
+database_path = "output_data.sqlite"
 
 def conv_net(x, keep_prob, reuse):
     with tf.variable_scope("model", reuse=reuse):
     
         # 10
-        full1 = tf.contrib.layers.fully_connected(inputs=x, num_outputs=128, activation_fn=tf.nn.relu)
+        full1 = tf.layers.dense(x, 128, activation=tf.nn.relu)
         full1 = tf.nn.dropout(full1, keep_prob)
     
         # 11
-        full2 = tf.contrib.layers.fully_connected(inputs=full1, num_outputs=256, activation_fn=tf.nn.relu)
+        full2 = tf.layers.dense(full1, 256, activation=tf.nn.relu)
         full2 = tf.nn.dropout(full2, keep_prob)
     
         # 12
-        full3 = tf.contrib.layers.fully_connected(inputs=full2, num_outputs=512, activation_fn=tf.nn.relu)
+        full3 = tf.layers.dense(full2, 512, activation=tf.nn.relu)
         full3 = tf.nn.dropout(full3, keep_prob)
     
         # 13
-        full4 = tf.contrib.layers.fully_connected(inputs=full3, num_outputs=1024, activation_fn=tf.nn.relu)
+        full4 = tf.layers.dense(full3, 1024, activation=tf.nn.relu)
         full4 = tf.nn.dropout(full4, keep_prob)
         
         #14
-        full5 = tf.contrib.layers.fully_connected(inputs=full4, num_outputs=1024, activation_fn=tf.nn.relu)
+        full5 = tf.layers.dense(full4, 1024, activation=tf.nn.relu)
         full5 = tf.nn.dropout(full5, keep_prob)
     
         # 15
-        out = tf.contrib.layers.fully_connected(inputs=full5, num_outputs=1, activation_fn=None)
+        out = tf.layers.dense(full5, 1, activation=None)
         return out
 
 def model_dir():
@@ -162,7 +162,8 @@ with tf.Graph().as_default():
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
     
     # Accuracy
-    correct_pred = tf.equal(tf.argmax(logits, 1), tf.argmax(y, 1))
+    predict = tf.round(tf.nn.sigmoid(logits))
+    correct_pred = tf.equal(predict, y)
     accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32), name='accuracy')
     
     init_ops = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
@@ -258,16 +259,16 @@ with tf.Graph().as_default():
                 
                 total += 1
                 
-                result = sess.run(logits,
+                result = sess.run(predict,
 							 feed_dict={
 								 x: [data_row],
 								 keep_prob: 1.
 							 })
   
                 result = 0 if result[0][0] < 0 else 1
-                print("Pred = ", result)
-                print("Correct = ", row[10])
-                print()
+#                print("Pred = ", result)
+#                print("Correct = ", row[10])
+#                print()
                 
                 if result == row[10]:
                   right += 1

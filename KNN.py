@@ -11,12 +11,13 @@ import sqlite3
 #file parameters
 dataset_name = "two"
 checkpoint_dir = "checkpoint"
-database_path = "output_data_detected_ads.sqlite"
+database_path = "output_data.sqlite"
 
 
 def loadData():
     with sqlite3.connect(database_path, check_same_thread=False) as database:
         cur = database.cursor()
+        cur.execute("DELETE FROM prediction_table")
         cur.execute("CREATE TABLE IF NOT EXISTS prediction_table (\
             id INTEGER PRIMARY KEY AUTOINCREMENT,\
             url TEXT,\
@@ -87,17 +88,20 @@ with sqlite3.connect(database_path, check_same_thread=False) as database:
         
         total += 1
         
-        result = neigh.predict([data_row])
+        result = int(neigh.predict([data_row])[0])
         
-        print("Pred = ", result)
-        print("Correct = ", row[10])
-        print()
+#        print("Pred = ", result)
+#        print("Correct = ", row[10])
+#        print()
         
         if result == row[10]:
           right += 1
+          
+        cur.execute("INSERT INTO prediction_table (url, visit_id, trained, knn_pred) VALUES (?, ?, ?, ?)", (row[11], row[12], dataset_name, result))
         
 #        x.append(data_row)
 #        y.append(row[10])
 #        print("DATA: ", [data_row])
 #        print("URL %s has pred %d" % (row[11], neigh.predict([data_row])))
     print("Accuracy = ", (right / total))
+    database.commit()
