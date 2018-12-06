@@ -76,10 +76,8 @@ def paramE(depth, visitId, **kwargs):
       print("Failed E")
         
 
-def paramsAToD(visitId, database):
+def paramsAToD(row, cur):
     try:
-        cur = database.cursor()
-        cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visitId,))
         
         AOneCheck = ["ad.",       "ad/",        "ad&",        "ad=",        "ad;",        "ad-",        "ad_",
                      "advert.",   "advert/",    "advert&",    "advert=",    "advert;",    "advert-",    "advert_",
@@ -101,74 +99,69 @@ def paramsAToD(visitId, database):
         
         DTwoCheck = ["screenheight", "screenwidth", "browserheight", "browserwidth", "screendensity", "screenresolution", "browsertimeoffset"]
         
-        rows = cur.fetchall()
-     
-        for row in rows:
-            url = row[0]
+        url = row[0]
+        
+        #Anything from AOneCheck exists in url
+        AOne = any(check in url for check in AOneCheck)
+        
+        #Anything from ATwoCheck exists in url
+        ATwo = any(check in url for check in ATwoCheck)
+        
+        #There are at least 2 occurences of ..;.. in the url (parameters being split by semicolon)
+        BOne = len(re.findall(BOneCheck, url)) >= 2
+        
+        #The parameters are being set up before the ?
+        urlSplit = url.split("?")
+        BTwo = len(re.findall(BTwoCheck, urlSplit[0])) >= 2
             
-            #Anything from AOneCheck exists in url
-            AOne = any(check in url for check in AOneCheck)
+        #The base domain is anywhere in url path or query strings 
+        COne = False
+        
+        #The url is not a subdomain of the base url
+        CTwo = False
+        
+        cur.execute("SELECT top_level_url, is_third_party_channel FROM http_requests WHERE url = ? AND visit_id = ?", (url, row[1]))
+        
+        possibleRows = cur.fetchall()
+        for CRow in possibleRows:
+            topUrl = CRow[0]
             
-            #Anything from ATwoCheck exists in url
-            ATwo = any(check in url for check in ATwoCheck)
+            if topUrl is not None:
+              urlTuple = urlparse(url)
+              parsedTopUrl = urlparse(topUrl).netloc.replace("http://", "").replace("https://", "").replace("www.", "")
+              COne = parsedTopUrl in urlTuple.path or \
+                     parsedTopUrl in urlTuple.query
             
-            #There are at least 2 occurences of ..;.. in the url (parameters being split by semicolon)
-            BOne = len(re.findall(BOneCheck, url)) >= 2
-            
-            #The parameters are being set up before the ?
-            urlSplit = url.split("?")
-            BTwo = len(re.findall(BTwoCheck, urlSplit[0])) >= 2
-                
-            #The base domain is anywhere in url path or query strings 
-            COne = False
-            
-            #The url is not a subdomain of the base url
-            CTwo = False
-            
-            cur.execute("SELECT top_level_url, is_third_party_channel FROM http_requests WHERE url = ? AND visit_id = ?", (url, visitId))
-            
-            possibleRows = cur.fetchall()
-            for CRow in possibleRows:
-                topUrl = CRow[0]
-                
-                if topUrl is not None:
-                  urlTuple = urlparse(url)
-                  parsedTopUrl = urlparse(topUrl).netloc.replace("http://", "").replace("https://", "").replace("www.", "")
-                  COne = parsedTopUrl in urlTuple.path or \
-                         parsedTopUrl in urlTuple.query
-                
-                CTwo = CRow[1]
-            
-            #The URL contains 2-4 numbers followed by an "x" followed by 2-4 more numbers (EX: 950x2500)
-            DOne = len(re.findall(DOneCheck, url)) >= 1
-            
-            #Anything from DTwoCheck exists in url
-            DTwo = any(check in url for check in DTwoCheck)
-            
-            cur.execute("UPDATE http_requests SET A_one = ?, A_two = ?, B_one = ?, B_two = ?, C_one = ?, C_two = ?, \
-                        D_one = ?, D_two = ? WHERE url = ? AND visit_id = ?", (AOne, ATwo, BOne, BTwo, COne, CTwo, DOne, DTwo, url, visitId))
-          
-        database.commit()
+            CTwo = CRow[1]
+        
+        #The URL contains 2-4 numbers followed by an "x" followed by 2-4 more numbers (EX: 950x2500)
+        DOne = len(re.findall(DOneCheck, url)) >= 1
+        
+        #Anything from DTwoCheck exists in url
+        DTwo = any(check in url for check in DTwoCheck)
+        
+        cur.execute("UPDATE http_requests SET A_one = ?, A_two = ?, B_one = ?, B_two = ?, C_one = ?, C_two = ?, \
+                    D_one = ?, D_two = ? WHERE url = ? AND visit_id = ?", (AOne, ATwo, BOne, BTwo, COne, CTwo, DOne, DTwo, url, row[1]))
     except:
       print("Failed A-D")
           
-def paramF(visitId, database):
+def paramF(row, cur):
     try:
-        num = (visitId,)
-        cur = database.cursor()
+        num = (row[1],)
     
         # This part of the function calculates proportion of external iframes for each website ID and
             # and stores it in a list 'prop_ext_iframe'.
         
-        cur.execute('SELECT * FROM http_requests WHERE E = 1 AND visit_id = ?', num)
-        ext_iframe, total_iframe = 0,0
-        prop_ext_iframe = 0.0
-        for row in cur.fetchall():
-            total_iframe += 1
-            if row[13] == 1: # row[10] is binary column for external
-                ext_iframe += 1 
-        if total_iframe !=0 :
-            prop_ext_iframe = ext_iframe/float(total_iframe)
+        # We are not using E, so we are not using F_iframe
+#        cur.execute('SELECT * FROM http_requests WHERE E = 1 AND visit_id = ?', num)
+#        ext_iframe, total_iframe = 0,0
+#        prop_ext_iframe = 0.0
+#        for row in cur.fetchall():
+#            total_iframe += 1
+#            if row[13] == 1: # row[10] is binary column for external
+#                ext_iframe += 1 
+#        if total_iframe !=0 :
+#            prop_ext_iframe = ext_iframe/float(total_iframe)
     
         # This part of the function calculates proportion of external scripts for each website ID and
             # and stores it in a list 'prop_ext_script'.
@@ -176,9 +169,9 @@ def paramF(visitId, database):
         cur.execute('SELECT * FROM http_requests WHERE content_policy_type = 2 AND visit_id = ?', num)
         ext_script, total_script = 0, 0
         prop_ext_script = 0.0
-        for row in cur.fetchall():
+        for temp_row in cur.fetchall():
             total_script += 1
-            if row[13] == 1: # row[10] is binary column for external
+            if temp_row[13] == 1: # row[10] is binary column for external
                 ext_script += 1
         if total_script !=0 :
             prop_ext_script = ext_script/float(total_script)
@@ -189,26 +182,21 @@ def paramF(visitId, database):
         cur.execute('SELECT * FROM http_requests WHERE visit_id = ?', num)
         ext_url_resources, total_url_resources = 0, 0
         prop_ext_url_resources = 0.0
-        for row in cur.fetchall():
+        for temp_row in cur.fetchall():
             total_url_resources += 1
-            if row[13] == 1 : # row[10] is binary column for external
+            if temp_row[13] == 1 : # row[10] is binary column for external
                 ext_url_resources += 1
         if total_url_resources != 0:
             prop_ext_url_resources = ext_url_resources/float(total_url_resources)
             
-        cur.execute ('UPDATE http_requests SET F_iframe = (?) WHERE visit_id = ?', (prop_ext_iframe, visitId))
-        cur.execute ('UPDATE http_requests SET F_script = (?) WHERE visit_id = ?', (prop_ext_script, visitId))
-        cur.execute ('UPDATE http_requests SET F_resource = (?) WHERE visit_id = ?', (prop_ext_url_resources, visitId))
-        
-        database.commit()
+#        cur.execute ('UPDATE http_requests SET F_iframe = (?) WHERE visit_id = ?', (prop_ext_iframe, visitId))
+        cur.execute ('UPDATE http_requests SET F_script = (?) WHERE visit_id = ?', (prop_ext_script, row[1]))
+        cur.execute ('UPDATE http_requests SET F_resource = (?) WHERE visit_id = ?', (prop_ext_url_resources, row[1]))
     except:
       print("Failed F")
         
-def blockerCheck(visitId, database, blocker, blockerNum):
+def blockerCheck(row, cur, blocker, blockerNum):
     try:
-        cur = database.cursor()
-        cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visitId,))
-        rows = cur.fetchall()
         
         blockerString = "_month_list"
         if blockerNum == 0:
@@ -219,13 +207,9 @@ def blockerCheck(visitId, database, blocker, blockerNum):
             blockerString = "four" + blockerString
         elif blockerNum == 3:
             blockerString = "six" + blockerString
-     
-        for row in rows:
-            url = row[0]    
-            result = blocker.should_block(url)
-            cur.execute("UPDATE http_requests SET " + blockerString + " = ? WHERE url = ? AND visit_id = ?", (result, url, visitId))
-            
-        database.commit()
+        url = row[0]    
+        result = blocker.should_block(url)
+        cur.execute("UPDATE http_requests SET " + blockerString + " = ? WHERE url = ? AND visit_id = ?", (result, row[0], row[1]))
     except:
       print("blocker failed")
           
@@ -365,12 +349,16 @@ for easyListDir in easyListDirs:
 
 
 #Perform any commands outside of manager crawls.
-with sqlite3.connect(db_path, check_same_thread=False) as database:    
-    for i in range(visitCounter):
-        paramsAToD(i, database)
-        paramF(i, database)
+with sqlite3.connect(db_path, check_same_thread=False) as database: 
+    cur = database.cursor()
+    cur.execute("SELECT url, visit_id, id FROM http_requests")  
+    rows = cur.fetchall()
+    for row in rows:
+        paramsAToD(row, cur)
+        paramF(row, cur)
         
         for (index, blocker) in enumerate(blockers):
-            blockerCheck(i, database, blocker, index)
+            blockerCheck(row, cur, blocker, index)
             
-        print("id %d parsed" % (i,))
+        print("id %d parsed" % (row[2],))
+        database.commit()
