@@ -17,22 +17,7 @@ from selenium.common.exceptions import StaleElementReferenceException
 
 import sqlite3
 from OpenWPM.automation.Commands.utils import webdriver_extensions as we
-
-class ContainerSites:
-    
-    def __init__(self):
-        self.depthUrl = {}
         
-    def addSites(self, depth, sites):
-        self.depthUrl[depth] = sites
-        
-    def addSite(self, depth, site):
-        if depth not in self.depthUrl:
-          self.depthUrl[depth] = []
-      
-        self.depthUrl[depth].append(site)
-        
-
 def helperE(driver, tag, attribute, isTopFrame):
     urls = {}
     for element in driver.find_elements_by_tag_name(tag):
@@ -72,23 +57,27 @@ def paramE(depth, visitId, **kwargs):
     we.execute_in_all_frames(driver, collectLinks, {'urls': urls})
     
     db_path = kwargs["manager_params"]['database_name']
-    with sqlite3.connect(db_path, check_same_thread=False) as database:
-        cur = database.cursor()
-        cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visitId,))
-        
-        rows = cur.fetchall()
-     
-        for row in rows:
-            #print("ROW: ", row)
-            tempUrl = row[0]
-            if tempUrl in urls:
-                isNotIframe = urls[tempUrl]
-                cur.execute("UPDATE http_requests SET depth = ?, E = ? WHERE url = ?", (depth, isNotIframe, tempUrl))
-                database.commit()
+    try:
+        with sqlite3.connect(db_path, check_same_thread=False) as database:
+            cur = database.cursor()
+            cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visitId,))
+            
+            rows = cur.fetchall()
+         
+            for row in rows:
+                #print("ROW: ", row)
+                tempUrl = row[0]
+                if tempUrl in urls:
+                    isNotIframe = urls[tempUrl]
+                    cur.execute("UPDATE http_requests SET depth = ?, E = ? WHERE url = ?", (depth, isNotIframe, tempUrl))
+            
+            database.commit()
+    except:
+      print("Failed E")
         
 
-def paramsAToD(visitId, dbPath):
-    with sqlite3.connect(dbPath, check_same_thread=False) as database:
+def paramsAToD(visitId, database):
+    try:
         cur = database.cursor()
         cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visitId,))
         
@@ -115,54 +104,56 @@ def paramsAToD(visitId, dbPath):
         rows = cur.fetchall()
      
         for row in rows:
-          url = row[0]
+            url = row[0]
+            
+            #Anything from AOneCheck exists in url
+            AOne = any(check in url for check in AOneCheck)
+            
+            #Anything from ATwoCheck exists in url
+            ATwo = any(check in url for check in ATwoCheck)
+            
+            #There are at least 2 occurences of ..;.. in the url (parameters being split by semicolon)
+            BOne = len(re.findall(BOneCheck, url)) >= 2
+            
+            #The parameters are being set up before the ?
+            urlSplit = url.split("?")
+            BTwo = len(re.findall(BTwoCheck, urlSplit[0])) >= 2
+                
+            #The base domain is anywhere in url path or query strings 
+            COne = False
+            
+            #The url is not a subdomain of the base url
+            CTwo = False
+            
+            cur.execute("SELECT top_level_url, is_third_party_channel FROM http_requests WHERE url = ? AND visit_id = ?", (url, visitId))
+            
+            possibleRows = cur.fetchall()
+            for CRow in possibleRows:
+                topUrl = CRow[0]
+                
+                if topUrl is not None:
+                  urlTuple = urlparse(url)
+                  parsedTopUrl = urlparse(topUrl).netloc.replace("http://", "").replace("https://", "").replace("www.", "")
+                  COne = parsedTopUrl in urlTuple.path or \
+                         parsedTopUrl in urlTuple.query
+                
+                CTwo = CRow[1]
+            
+            #The URL contains 2-4 numbers followed by an "x" followed by 2-4 more numbers (EX: 950x2500)
+            DOne = len(re.findall(DOneCheck, url)) >= 1
+            
+            #Anything from DTwoCheck exists in url
+            DTwo = any(check in url for check in DTwoCheck)
+            
+            cur.execute("UPDATE http_requests SET A_one = ?, A_two = ?, B_one = ?, B_two = ?, C_one = ?, C_two = ?, \
+                        D_one = ?, D_two = ? WHERE url = ? AND visit_id = ?", (AOne, ATwo, BOne, BTwo, COne, CTwo, DOne, DTwo, url, visitId))
           
-          #Anything from AOneCheck exists in url
-          AOne = any(check in url for check in AOneCheck)
+        database.commit()
+    except:
+      print("Failed A-D")
           
-          #Anything from ATwoCheck exists in url
-          ATwo = any(check in url for check in ATwoCheck)
-          
-          #There are at least 2 occurences of ..;.. in the url (parameters being split by semicolon)
-          BOne = len(re.findall(BOneCheck, url)) >= 2
-          
-          #The parameters are being set up before the ?
-          urlSplit = url.split("?")
-          BTwo = len(re.findall(BTwoCheck, urlSplit[0])) >= 2
-              
-          #The base domain is anywhere in url path or query strings 
-          COne = False
-          
-          #The url is not a subdomain of the base url
-          CTwo = False
-          
-          cur.execute("SELECT top_level_url, is_third_party_channel FROM http_requests WHERE url = ? AND visit_id = ?", (url, visitId))
-          
-          possibleRows = cur.fetchall()
-          for CRow in possibleRows:
-              topUrl = CRow[0]
-              
-              if topUrl is not None:
-                urlTuple = urlparse(url)
-                parsedTopUrl = urlparse(topUrl).netloc.replace("http://", "").replace("https://", "").replace("www.", "")
-                COne = parsedTopUrl in urlTuple.path or \
-                       parsedTopUrl in urlTuple.query
-              
-              CTwo = CRow[1]
-          
-          #The URL contains 2-4 numbers followed by an "x" followed by 2-4 more numbers (EX: 950x2500)
-          DOne = len(re.findall(DOneCheck, url)) >= 1
-          
-          #Anything from DTwoCheck exists in url
-          DTwo = any(check in url for check in DTwoCheck)
-          
-          cur.execute("UPDATE http_requests SET A_one = ?, A_two = ?, B_one = ?, B_two = ?, C_one = ?, C_two = ?, \
-                      D_one = ?, D_two = ? WHERE url = ? AND visit_id = ?", (AOne, ATwo, BOne, BTwo, COne, CTwo, DOne, DTwo, url, visitId))
-          
-          database.commit()
-          
-def paramF(visitId, dbPath):
-    with sqlite3.connect(dbPath, check_same_thread=False) as database:
+def paramF(visitId, database):
+    try:
         num = (visitId,)
         cur = database.cursor()
     
@@ -210,9 +201,11 @@ def paramF(visitId, dbPath):
         cur.execute ('UPDATE http_requests SET F_resource = (?) WHERE visit_id = ?', (prop_ext_url_resources, visitId))
         
         database.commit()
+    except:
+      print("Failed F")
         
-def blockerCheck(visitId, dbPath, blocker, blockerNum):
-    with sqlite3.connect(dbPath, check_same_thread=False) as database:
+def blockerCheck(visitId, database, blocker, blockerNum):
+    try:
         cur = database.cursor()
         cur.execute("SELECT url FROM http_requests WHERE visit_id = ?", (visitId,))
         rows = cur.fetchall()
@@ -233,6 +226,8 @@ def blockerCheck(visitId, dbPath, blocker, blockerNum):
             cur.execute("UPDATE http_requests SET " + blockerString + " = ? WHERE url = ? AND visit_id = ?", (result, url, visitId))
             
         database.commit()
+    except:
+      print("blocker failed")
           
         
 def getAdBlock(directory):
@@ -250,17 +245,12 @@ def getNextDepthHelper(url, depth, cur):
     cur.execute("INSERT INTO url_depth (depth, url) VALUES (?, ?)", (depth + 0, url))
   
 def getNextDepth(url, depth, **kwargs):
-    print(kwargs)
     driver = kwargs['driver']
+    manager_params = kwargs['manager_params']
     domain = urlparse(url).netloc.replace("http://", "").replace("https://", "").replace("www.", "")
     
-    sock = kwargs["extension_socket"]
-#    sock = clientsocket()
-#    sock.connect(kwargs["manager_params"]['aggregator_address'])
-    
-#    db_path = kwargs["manager_params"]['database_name']
-#    with sqlite3.connect(db_path, check_same_thread=False) as database:
-#        cur = database.cursor()
+    sock = clientsocket()
+    sock.connect(*manager_params['aggregator_address'])
     for element in driver.find_elements_by_tag_name("a"):
         try:
             href = element.get_attribute("href")
@@ -271,101 +261,103 @@ def getNextDepth(url, depth, **kwargs):
             continue
           
         if domain in href:
-          insert = {}
-          insert["depth"] = depth + 1
-          insert["url"] = href
-          sock.send(("url_depth", insert))
-            #print("Next url in depth: ", href)
-#            getNextDepthHelper(href, depth + 1, cur)
-                
-#        database.commit()
+          query = ("url_depth", {
+                    "depth": depth + 1,
+                    "url": href
+                })
+          sock.send(query)
             
-#    sock.close()
+    sock.close()
           
 
 
 # The list of sites that we wish to crawl
 NUM_BROWSERS = 3
 
-#Will hold all websites and their respective depth
-container = ContainerSites()
-
 easyListDirs = ["easylist-Dec 4", "easylist-Oct 4", "easylist-Aug 4", "easylist-Jun 4"]
 blockers = []        
 
-# Loads the manager preference and 3 copies of the default browser dictionaries
-managerParams, browserParams = TaskManager.load_default_params(NUM_BROWSERS)
-
-# Update browser configuration (use this for per-browser settings)
-for i in range(NUM_BROWSERS):
-    # Record HTTP Requests and Responses
-    browserParams[i]['http_instrument'] = True
-    # Enable flash for all three browsers
-    browserParams[i]['disable_flash'] = False
-    #browserParams[i]['headless'] = True
-    browserParams[i]['js_instrument'] = True
-    browserParams[i]['ublock-origin'] = False
-    browserParams[i]['ghostery'] = False
-    
-
-# Update TaskManager configuration (use this for crawl-wide settings)
-managerParams['data_directory'] = '~/Desktop/'
-managerParams['log_directory'] = '~/Desktop/'
-
-# Have the program sleep for 10 milsec, and set the name of the database.
-time.sleep(10)
-managerParams['database_name'] = 'output_data.sqlite'
-
-db_path = os.path.join(os.path.expanduser('~/Desktop/'), managerParams['database_name'])
+file_dir = '~/Desktop/'
+database_name = 'output_data.sqlite'
+db_path = os.path.join(os.path.expanduser(file_dir), database_name)
 
 # We want the first 500 websites.
-num_websites = 2
-maxDepth = 2
-visitCounter = 1
-for depth in range(maxDepth + 1):
-  
-    sites = []
+#num_websites = 50
+#maxDepth = 1
+#visitCounter = 1
+#for depth in range(maxDepth + 1):
+#  
+#    sites = []
+#    
+#    if depth == 0:
+#        with open('top-1m.csv','rb') as f:
+#          for x in xrange(num_websites):
+#              line = next(f)
+#              line = line.replace('\r\n','')
+#              site = line.split(',')[1]
+#              sites.append("http://" + site)
+#    else:
+#        with sqlite3.connect(db_path, check_same_thread=False) as database:
+#            cur = database.cursor()
+#            cur.execute("SELECT url FROM url_depth WHERE depth = ?", (depth,))
+#            rows = cur.fetchall()
+#            for row in rows:
+#                sites.append(row[0])
+#  
+#    if sites:
+#        try:
+#            # Loads the manager preference and 3 copies of the default browser dictionaries
+#            managerParams, browserParams = TaskManager.load_default_params(NUM_BROWSERS)
+#            
+#            # Update browser configuration (use this for per-browser settings)
+#            for i in range(NUM_BROWSERS):
+#                # Record HTTP Requests and Responses
+#                browserParams[i]['http_instrument'] = True
+#                # Enable flash for all three browsers
+#                browserParams[i]['disable_flash'] = False
+#                #browserParams[i]['headless'] = True
+#                browserParams[i]['js_instrument'] = True
+#                browserParams[i]['ublock-origin'] = False
+#                browserParams[i]['ghostery'] = False
+#                
+#            
+#            # Update TaskManager configuration (use this for crawl-wide settings)
+#            managerParams['data_directory'] = file_dir
+#            managerParams['log_directory'] = file_dir
+#            
+#            # Have the program sleep for 10 milsec, and set the name of the database.
+#            time.sleep(10)
+#            managerParams['database_name'] = database_name
+#          
+#            # Instantiates the measurement platform
+#            # Commands time out by default after 60 seconds
+#            manager = TaskManager.TaskManager(managerParams, browserParams) 
+#              
+#            # Visits the sites with all browsers simultaneously
+#            for site in sites:
+#                command_sequence = CommandSequence.CommandSequence(site)
+#            
+#                # Start by visiting the page
+#                command_sequence.get(sleep=10, timeout=60)
+#                
+#                #Collect parameter E
+#                command_sequence.run_custom_function(paramE, (depth, visitCounter))
+#                
+#                #Get URLs for next depth
+#                command_sequence.run_custom_function(getNextDepth, (site, depth))
+#            
+#                # index='**' synchronizes visits between the three browsers
+#                manager.execute_command_sequence(command_sequence, index=None)
+#                
+#                visitCounter += 1
+#            
+#            # Shuts down the browsers and waits for the data to finish logging
+#            manager.close()
+#        except:
+#          print("Manager failed")
     
-    if depth == 0:
-        with open('top-1m.csv','rb') as f:
-          for x in xrange(num_websites):
-              line = next(f)
-              line = line.replace('\r\n','')
-              site = line.split(',')[1]
-              sites.append("http://" + site)
-    else:
-        with sqlite3.connect(db_path, check_same_thread=False) as database:
-            cur = database.cursor()
-            cur.execute("SELECT url FROM url_depth WHERE depth = ?", (depth,))
-            rows = cur.fetchall()
-            for row in rows:
-                sites.append(row[0])
-  
-    # Instantiates the measurement platform
-    # Commands time out by default after 60 seconds
-    manager = TaskManager.TaskManager(managerParams, browserParams) 
-      
-    # Visits the sites with all browsers simultaneously
-    for site in sites:
-        command_sequence = CommandSequence.CommandSequence(site)
-    
-        # Start by visiting the page
-        command_sequence.get(sleep=10, timeout=60)
-        
-        #Collect parameter E
-        command_sequence.run_custom_function(paramE, (depth, visitCounter))
-        
-        #Get URLs for next depth
-        command_sequence.run_custom_function(getNextDepth, (site, depth))
-    
-        # index='**' synchronizes visits between the three browsers
-        manager.execute_command_sequence(command_sequence, index=None)
-        
-        visitCounter += 1
-    
-    # Shuts down the browsers and waits for the data to finish logging
-    manager.close()
-    
+
+visitCounter = 50528
 print("Manager done......")
 for easyListDir in easyListDirs:
     blockers.append(AdblockRules(getAdBlock(easyListDir)))
@@ -373,11 +365,12 @@ for easyListDir in easyListDirs:
 
 
 #Perform any commands outside of manager crawls.
-for i in range(visitCounter):
-    paramsAToD(i, db_path)
-    paramF(i, db_path)
-    
-    for (index, blocker) in enumerate(blockers):
-        blockerCheck(i, db_path, blocker, index)
+with sqlite3.connect(db_path, check_same_thread=False) as database:    
+    for i in range(visitCounter):
+        paramsAToD(i, database)
+        paramF(i, database)
         
-    print("id %d parsed" % (i,))
+        for (index, blocker) in enumerate(blockers):
+            blockerCheck(i, database, blocker, index)
+            
+        print("id %d parsed" % (i,))
