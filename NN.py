@@ -13,7 +13,7 @@ keep_probability = .8
 learning_rate = 0.001
 
 #file parameters
-dataset_name = "two"
+dataset_name = "four"
 checkpoint_dir = "checkpoint"
 database_path = "output_data.sqlite"
 
@@ -28,20 +28,8 @@ def conv_net(x, keep_prob, reuse):
         full2 = tf.layers.dense(full1, 256, activation=tf.nn.relu)
         full2 = tf.nn.dropout(full2, keep_prob)
     
-        # 12
-        full3 = tf.layers.dense(full2, 512, activation=tf.nn.relu)
-        full3 = tf.nn.dropout(full3, keep_prob)
-    
-        # 13
-        full4 = tf.layers.dense(full3, 1024, activation=tf.nn.relu)
-        full4 = tf.nn.dropout(full4, keep_prob)
-        
-        #14
-        full5 = tf.layers.dense(full4, 1024, activation=tf.nn.relu)
-        full5 = tf.nn.dropout(full5, keep_prob)
-    
         # 15
-        out = tf.layers.dense(full5, 1, activation=None)
+        out = tf.layers.dense(full2, 1, activation=None)
         return out
 
 def model_dir():
@@ -111,7 +99,7 @@ def loadData():
             data_row.append(float(row[9]))
             
             x.append(data_row)
-            y.append([float(row[10])])
+            y.append(float(row[10]))
             
         
         database.commit()    
@@ -134,7 +122,7 @@ with tf.Graph().as_default():
     
     # Inputs
     x = tf.placeholder(tf.float32, shape=(None, 10), name='input_x')
-    y =  tf.placeholder(tf.float32, shape=(None, 1), name='output_y')
+    y =  tf.placeholder(tf.float32, shape=(None), name='output_y')
     keep_prob = tf.placeholder(tf.float32, name='keep_prob')
     
     #Load X and Y
@@ -241,6 +229,10 @@ with tf.Graph().as_default():
             rows = cur.fetchall()
             
             right = 0
+            t_positive = 0
+            t_negative = 0
+            f_positive = 0
+            f_negative = 0
             total = 0
             print(len(rows))
              
@@ -265,16 +257,40 @@ with tf.Graph().as_default():
 								 keep_prob: 1.
 							 })
   
-                result = 0 if result[0][0] < 0 else 1
+#                result = 0 if result[0][0] < 0 else 1
 #                print("Pred = ", result)
 #                print("Correct = ", row[10])
 #                print()
                 
                 if result == row[10]:
                   right += 1
+                  if result == 1:
+                    t_positive += 1
+                  else:
+                    t_negative += 1
+                    
+                if result != row[10]:
+                  if result == 1:
+                    f_positive += 1
+                  else:
+                    f_negative += 1
                 
         #        x.append(data_row)
         #        y.append(row[10])
         #        print("DATA: ", [data_row])
         #        print("URL %s has pred %d" % (row[11], neigh.predict([data_row])))
+            
             print("Accuracy = ", (right / total))
+            print("False positive = ", f_positive)
+            print("False negative = ", f_negative)
+            print("True negative = ", t_negative)
+            print("True positive = ", t_positive)
+            
+            
+            precision = t_positive / (t_positive + f_positive)
+            recall = t_positive / (t_positive + f_negative)
+            f_1 = 2 * ((precision * recall) / (precision + recall))
+            
+            print("Precision = ", precision)
+            print("Recall = ", recall)
+            print("F1 score = ", f_1)

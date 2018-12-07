@@ -266,82 +266,82 @@ database_name = 'output_data.sqlite'
 db_path = os.path.join(os.path.expanduser(file_dir), database_name)
 
 # We want the first 500 websites.
-#num_websites = 50
-#maxDepth = 1
-#visitCounter = 1
-#for depth in range(maxDepth + 1):
-#  
-#    sites = []
-#    
-#    if depth == 0:
-#        with open('top-1m.csv','rb') as f:
-#          for x in xrange(num_websites):
-#              line = next(f)
-#              line = line.replace('\r\n','')
-#              site = line.split(',')[1]
-#              sites.append("http://" + site)
-#    else:
-#        with sqlite3.connect(db_path, check_same_thread=False) as database:
-#            cur = database.cursor()
-#            cur.execute("SELECT url FROM url_depth WHERE depth = ?", (depth,))
-#            rows = cur.fetchall()
-#            for row in rows:
-#                sites.append(row[0])
-#  
-#    if sites:
-#        try:
-#            # Loads the manager preference and 3 copies of the default browser dictionaries
-#            managerParams, browserParams = TaskManager.load_default_params(NUM_BROWSERS)
-#            
-#            # Update browser configuration (use this for per-browser settings)
-#            for i in range(NUM_BROWSERS):
-#                # Record HTTP Requests and Responses
-#                browserParams[i]['http_instrument'] = True
-#                # Enable flash for all three browsers
-#                browserParams[i]['disable_flash'] = False
-#                #browserParams[i]['headless'] = True
-#                browserParams[i]['js_instrument'] = True
-#                browserParams[i]['ublock-origin'] = False
-#                browserParams[i]['ghostery'] = False
-#                
-#            
-#            # Update TaskManager configuration (use this for crawl-wide settings)
-#            managerParams['data_directory'] = file_dir
-#            managerParams['log_directory'] = file_dir
-#            
-#            # Have the program sleep for 10 milsec, and set the name of the database.
-#            time.sleep(10)
-#            managerParams['database_name'] = database_name
-#          
-#            # Instantiates the measurement platform
-#            # Commands time out by default after 60 seconds
-#            manager = TaskManager.TaskManager(managerParams, browserParams) 
-#              
-#            # Visits the sites with all browsers simultaneously
-#            for site in sites:
-#                command_sequence = CommandSequence.CommandSequence(site)
-#            
-#                # Start by visiting the page
-#                command_sequence.get(sleep=10, timeout=60)
-#                
-#                #Collect parameter E
-#                command_sequence.run_custom_function(paramE, (depth, visitCounter))
-#                
-#                #Get URLs for next depth
-#                command_sequence.run_custom_function(getNextDepth, (site, depth))
-#            
-#                # index='**' synchronizes visits between the three browsers
-#                manager.execute_command_sequence(command_sequence, index=None)
-#                
-#                visitCounter += 1
-#            
-#            # Shuts down the browsers and waits for the data to finish logging
-#            manager.close()
-#        except:
-#          print("Manager failed")
+num_websites = 50
+maxDepth = 1
+visitCounter = 1
+for depth in range(maxDepth + 1):
+  
+    sites = []
     
-
-visitCounter = 50528
+    if depth == 0:
+        with open('top-1m.csv','rb') as f:
+          for x in xrange(num_websites):
+              line = next(f)
+              line = line.replace('\r\n','')
+              site = line.split(',')[1]
+              sites.append("http://" + site)
+    else:
+        with sqlite3.connect(db_path, check_same_thread=False) as database:
+            cur = database.cursor()
+            cur.execute("SELECT url FROM url_depth WHERE depth = ?", (depth,))
+            rows = cur.fetchall()
+            for row in rows:
+                sites.append(row[0])
+  
+    if sites:
+        try:
+            # Loads the manager preference and 3 copies of the default browser dictionaries
+            managerParams, browserParams = TaskManager.load_default_params(NUM_BROWSERS)
+            
+            # Update browser configuration (use this for per-browser settings)
+            for i in range(NUM_BROWSERS):
+                # Record HTTP Requests and Responses
+                browserParams[i]['http_instrument'] = True
+                # Enable flash for all three browsers
+                browserParams[i]['disable_flash'] = False
+                #browserParams[i]['headless'] = True
+                browserParams[i]['js_instrument'] = True
+                browserParams[i]['ublock-origin'] = False
+                browserParams[i]['ghostery'] = False
+                
+            
+            # Update TaskManager configuration (use this for crawl-wide settings)
+            managerParams['data_directory'] = file_dir
+            managerParams['log_directory'] = file_dir
+            
+            # Have the program sleep for 10 milsec, and set the name of the database.
+            time.sleep(10)
+            managerParams['database_name'] = database_name
+          
+            # Instantiates the measurement platform
+            # Commands time out by default after 60 seconds
+            manager = TaskManager.TaskManager(managerParams, browserParams) 
+              
+            # Visits the sites with all browsers simultaneously
+            for site in sites:
+                command_sequence = CommandSequence.CommandSequence(site)
+            
+                # Start by visiting the page
+                command_sequence.get(sleep=10, timeout=60)
+                
+                #Collect parameter E
+                #E either times out, fails, or canot find the correct URLs due to them being 
+                #hidden in script, so do not bother.
+                #command_sequence.run_custom_function(paramE, (depth, visitCounter))
+                
+                #Get URLs for next depth
+                command_sequence.run_custom_function(getNextDepth, (site, depth))
+            
+                # index='**' synchronizes visits between the three browsers
+                manager.execute_command_sequence(command_sequence, index=None)
+                
+                visitCounter += 1
+            
+            # Shuts down the browsers and waits for the data to finish logging
+            manager.close()
+        except:
+          print("Manager failed")
+    
 print("Manager done......")
 for easyListDir in easyListDirs:
     blockers.append(AdblockRules(getAdBlock(easyListDir)))
